@@ -25,8 +25,8 @@
 //!   Much of this code is based on the puff.c implementation found here
 
 use std::cmp;
-use std::ptr::copy_nonoverlapping;
 use std::io::{self, Read};
+use std::ptr::copy_nonoverlapping;
 use std::vec::Vec;
 
 use super::byteorder::{LittleEndian, ReadBytesExt};
@@ -61,7 +61,7 @@ fn error<T>(e: Error) -> io::Result<T> {
             Error::InvalidHuffmanCode => "invalid huffman code",
             Error::InvalidStaticSize => "invalid static size",
             Error::NotEnoughBits => "not enough bits",
-        }
+        },
     ))
 }
 
@@ -89,7 +89,9 @@ impl HuffmanTree {
             tree.count[*len as usize] += 1;
         }
         // If there weren't actually any codes, then we're done
-        if tree.count[0] as usize == lens.len() { return Ok(tree) }
+        if tree.count[0] as usize == lens.len() {
+            return Ok(tree);
+        }
 
         // Make sure that this tree is sane. Each bit gives us 2x more codes to
         // work with, but if the counts add up to greater than the available
@@ -98,7 +100,9 @@ impl HuffmanTree {
         for i in 1..(MAXBITS + 1) {
             left *= 2;
             left -= tree.count[i] as isize;
-            if left < 0 { return error(Error::InvalidHuffmanTree) }
+            if left < 0 {
+                return error(Error::InvalidHuffmanTree);
+            }
         }
 
         // Generate the offset of each length into the 'symbol' array
@@ -131,10 +135,10 @@ impl HuffmanTree {
         let mut first = 0;
         let mut index = 0;
         for len in 1..(MAXBITS + 1) {
-            code |= try!(s.bits(1));
+            code |= r#try!(s.bits(1));
             let count = self.count[len];
             if code < first + count {
-                return Ok(self.symbol[(index + (code - first)) as usize])
+                return Ok(self.symbol[(index + (code - first)) as usize]);
             }
             index += count;
             first += count;
@@ -149,12 +153,22 @@ impl HuffmanTree {
 fn main() {
     static FIXLCODES: usize = 388;
     let mut arr = [0; FIXLCODES];
-    for i in 0..144 { arr[i] = 8; }
-    for i in 144..256 { arr[i] = 9; }
-    for i in 256..280 { arr[i] = 7; }
-    for i in 280..288 { arr[i] = 8; }
+    for i in 0..144 {
+        arr[i] = 8;
+    }
+    for i in 144..256 {
+        arr[i] = 9;
+    }
+    for i in 256..280 {
+        arr[i] = 7;
+    }
+    for i in 280..288 {
+        arr[i] = 8;
+    }
     println!("{:?}", HuffmanTree::construct(arr[..FIXLCODES]));
-    for i in 0..MAXDCODES { arr[i] = 5; }
+    for i in 0..MAXDCODES {
+        arr[i] = 5;
+    }
     println!("{:?}", HuffmanTree::construct(arr[..MAXDCODES]));
 }
 
@@ -194,8 +208,10 @@ impl<R: Read> Decoder<R> {
     fn block(&mut self) -> io::Result<()> {
         self.pos = 0;
         self.block = Vec::with_capacity(4096);
-        if try!(self.bits(1)) == 1 { self.eof = true; }
-        match try!(self.bits(2)) {
+        if r#try!(self.bits(1)) == 1 {
+            self.eof = true;
+        }
+        match r#try!(self.bits(2)) {
             0 => self.statik(),
             1 => self.fixed(),
             2 => self.dynamic(),
@@ -213,31 +229,26 @@ impl<R: Read> Decoder<R> {
         let remaining = HISTORY - self.outpos;
         let n = cmp::min(amt, remaining);
         if self.output.len() < HISTORY {
-            self.output.extend(self.block[from..(from + n)].iter().map(|b| *b));
+            self.output
+                .extend(self.block[from..(from + n)].iter().map(|b| *b));
         } else if n > 0 {
             assert_eq!(self.output.len(), HISTORY);
-            unsafe { copy_nonoverlapping(
-                &self.block[from],
-                &mut self.output[self.outpos],
-                n
-            )};
+            unsafe { copy_nonoverlapping(&self.block[from], &mut self.output[self.outpos], n) };
         }
         self.outpos += n;
         if n < amt {
-            unsafe { copy_nonoverlapping(
-                &self.block[from+n],
-                &mut self.output[0],
-                amt - n
-            )};
+            unsafe { copy_nonoverlapping(&self.block[from + n], &mut self.output[0], amt - n) };
             self.outpos = amt - n;
         }
     }
 
     fn statik(&mut self) -> io::Result<()> {
-        let len = try!(self.r.read_u16::<LittleEndian>());
-        let nlen = try!(self.r.read_u16::<LittleEndian>());
-        if !nlen != len { return error(Error::InvalidStaticSize) }
-        try!(self.r.push_exactly(len as u64, &mut self.block));
+        let len = r#try!(self.r.read_u16::<LittleEndian>());
+        let nlen = r#try!(self.r.read_u16::<LittleEndian>());
+        if !nlen != len {
+            return error(Error::InvalidStaticSize);
+        }
+        r#try!(self.r.push_exactly(len as u64, &mut self.block));
         self.update_output(0);
         self.bitcnt = 0;
         self.bitbuf = 0;
@@ -248,7 +259,7 @@ impl<R: Read> Decoder<R> {
     // left and consumed from the right.
     fn bits(&mut self, cnt: usize) -> io::Result<u16> {
         while self.bitcnt < cnt {
-            let byte = try!(self.r.read_u8());
+            let byte = r#try!(self.r.read_u8());
             self.bitbuf |= (byte as usize) << self.bitcnt;
             self.bitcnt += 8;
         }
@@ -258,49 +269,47 @@ impl<R: Read> Decoder<R> {
         return Ok(ret as u16);
     }
 
-    fn codes(&mut self, lens: &HuffmanTree,
-             dist: &HuffmanTree) -> io::Result<()> {
+    fn codes(&mut self, lens: &HuffmanTree, dist: &HuffmanTree) -> io::Result<()> {
         // extra base length for codes 257-285
         static EXTRALENS: [u16; 29] = [
-            3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51,
-            59, 67, 83, 99, 115, 131, 163, 195, 227, 258
+            3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99,
+            115, 131, 163, 195, 227, 258,
         ];
         // extra bits to read for codes 257-285
         static EXTRABITS: [u16; 29] = [
-            0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4,
-            4, 5, 5, 5, 5, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0,
         ];
         // base offset for distance codes.
         static EXTRADIST: [u16; 30] = [
-            1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385,
-            513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385,
-            24577,
+            1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025,
+            1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577,
         ];
         // number of bits to read for distance codes (to add to the offset)
         static EXTRADBITS: [u16; 30] = [
-            0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9,
-            10, 10, 11, 11, 12, 12, 13, 13,
+            0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12,
+            12, 13, 13,
         ];
         let mut last_updated = 0;
         loop {
-            let sym = try!(lens.decode(self));
+            let sym = r#try!(lens.decode(self));
             match sym {
-                n if n < 256 => { self.block.push(sym as u8); }
+                n if n < 256 => {
+                    self.block.push(sym as u8);
+                }
                 256 => break,
                 n if n < 290 => {
                     // figure out len/dist that we're working with
                     let n = n - 257;
                     if n as usize > EXTRALENS.len() {
-                        return error(Error::InvalidHuffmanCode)
+                        return error(Error::InvalidHuffmanCode);
                     }
-                    let len = EXTRALENS[n as usize] +
-                              try!(self.bits(EXTRABITS[n as usize] as usize));
+                    let len =
+                        EXTRALENS[n as usize] + r#try!(self.bits(EXTRABITS[n as usize] as usize));
 
                     let len = len as usize;
 
-                    let dist = try!(dist.decode(self)) as usize;
-                    let dist = EXTRADIST[dist] +
-                               try!(self.bits(EXTRADBITS[dist] as usize));
+                    let dist = r#try!(dist.decode(self)) as usize;
+                    let dist = EXTRADIST[dist] + r#try!(self.bits(EXTRADBITS[dist] as usize));
                     let dist = dist as usize;
 
                     // update the output buffer with any data we haven't pushed
@@ -311,7 +320,7 @@ impl<R: Read> Decoder<R> {
                     }
 
                     if dist > self.output.len() {
-                        return error(Error::InvalidHuffmanCode)
+                        return error(Error::InvalidHuffmanCode);
                     }
 
                     // Perform the copy
@@ -332,7 +341,7 @@ impl<R: Read> Decoder<R> {
                         self.block.push(b);
                     }
                 }
-                _ => return error(Error::InvalidHuffmanCode)
+                _ => return error(Error::InvalidHuffmanCode),
             }
         }
         self.update_output(last_updated);
@@ -344,59 +353,51 @@ impl<R: Read> Decoder<R> {
         static LEN: HuffmanTree = HuffmanTree {
             count: [100, 0, 0, 0, 0, 0, 0, 24, 152, 112, 0, 0, 0, 0, 0, 0],
             symbol: [
-                256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268,
-                269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 0, 1, 2,
-                3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-                21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
-                37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52,
-                53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68,
-                69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84,
-                85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100,
-                101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113,
-                114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126,
-                127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139,
-                140, 141, 142, 143, 280, 281, 282, 283, 284, 285, 286, 287, 144,
-                145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157,
-                158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170,
-                171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183,
-                184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196,
-                197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209,
-                210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222,
-                223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235,
-                236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248,
-                249, 250, 251, 252, 253, 254, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-            ]
+                256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271,
+                272, 273, 274, 275, 276, 277, 278, 279, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+                13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
+                34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54,
+                55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75,
+                76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96,
+                97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113,
+                114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129,
+                130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 280, 281,
+                282, 283, 284, 285, 286, 287, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153,
+                154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169,
+                170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185,
+                186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201,
+                202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217,
+                218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233,
+                234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249,
+                250, 251, 252, 253, 254, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ],
         };
         static DIST: HuffmanTree = HuffmanTree {
             count: [0, 0, 0, 0, 0, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             symbol: [
-                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 0, 0, 0, 0, 0
-            ]
+                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+                23, 24, 25, 26, 27, 28, 29, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ],
         };
 
         self.codes(&LEN, &DIST)
     }
 
     fn dynamic(&mut self) -> io::Result<()> {
-        let hlit = try!(self.bits(5)) + 257; // number of length codes
-        let hdist = try!(self.bits(5)) + 1;  // number of distance codes
-        let hclen = try!(self.bits(4)) + 4;  // number of code length codes
+        let hlit = r#try!(self.bits(5)) + 257; // number of length codes
+        let hdist = r#try!(self.bits(5)) + 1; // number of distance codes
+        let hclen = r#try!(self.bits(4)) + 4; // number of code length codes
         if hlit > MAXLCODES || hdist > MAXDCODES {
             return error(Error::HuffmanTreeTooLarge);
         }
@@ -409,16 +410,16 @@ impl<R: Read> Decoder<R> {
         ];
         let mut lengths = [0; 19];
         for i in 0..(hclen as usize) {
-            lengths[ORDER[i]] = try!(self.bits(3));
+            lengths[ORDER[i]] = r#try!(self.bits(3));
         }
-        let tree = try!(HuffmanTree::construct(&lengths));
+        let tree = r#try!(HuffmanTree::construct(&lengths));
 
         // Decode all of the length and distance codes in one go, we'll
         // partition them into two huffman trees later
         let mut lengths = [0; MAXCODES as usize];
         let mut i = 0;
         while i < hlit + hdist {
-            let symbol = try!(tree.decode(self));
+            let symbol = r#try!(tree.decode(self));
             match symbol {
                 n if n < 16 => {
                     lengths[i as usize] = symbol;
@@ -427,24 +428,30 @@ impl<R: Read> Decoder<R> {
                 16 if i == 0 => return error(Error::InvalidHuffmanHeaderSymbol),
                 16 => {
                     let prev = lengths[i as usize - 1];
-                    for _ in 0..(try!(self.bits(2)) + 3) {
+                    for _ in 0..(r#try!(self.bits(2)) + 3) {
                         lengths[i as usize] = prev;
                         i += 1;
                     }
                 }
                 // all codes start out as 0, so these just skip
-                17 => { i += try!(self.bits(3)) + 3; }
-                18 => { i += try!(self.bits(7)) + 11; }
+                17 => {
+                    i += r#try!(self.bits(3)) + 3;
+                }
+                18 => {
+                    i += r#try!(self.bits(7)) + 11;
+                }
                 _ => return error(Error::InvalidHuffmanHeaderSymbol),
             }
         }
-        if i > hlit + hdist { return error(Error::InvalidHuffmanTreeHeader) }
+        if i > hlit + hdist {
+            return error(Error::InvalidHuffmanTreeHeader);
+        }
 
         // Use the decoded codes to construct yet another huffman tree
         let arr = &lengths[..(hlit as usize)];
-        let lencode = try!(HuffmanTree::construct(arr));
+        let lencode = r#try!(HuffmanTree::construct(arr));
         let arr = &lengths[(hlit as usize)..((hlit + hdist) as usize)];
-        let distcode = try!(HuffmanTree::construct(arr));
+        let distcode = r#try!(HuffmanTree::construct(arr));
         self.codes(&lencode, &distcode)
     }
 
@@ -467,18 +474,16 @@ impl<R: Read> Decoder<R> {
 impl<R: Read> Read for Decoder<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.pos == self.block.len() {
-            if self.eof { return Ok(0) }
-            try!(self.block());
+            if self.eof {
+                return Ok(0);
+            }
+            r#try!(self.block());
         }
         let n = cmp::min(buf.len(), self.block.len() - self.pos);
         match n {
             0 => Ok(0),
             _ => {
-                unsafe { copy_nonoverlapping(
-                    &self.block[self.pos],
-                    &mut buf[0],
-                    n
-                )};
+                unsafe { copy_nonoverlapping(&self.block[self.pos], &mut buf[0], n) };
                 self.pos += n;
                 Ok(n)
             }
@@ -489,12 +494,12 @@ impl<R: Read> Read for Decoder<R> {
 #[cfg(test)]
 #[allow(warnings)]
 mod test {
+    use super::super::byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
+    use super::super::rand::random;
+    use super::Decoder;
     use std::io::{BufReader, BufWriter, Read, Write};
-    use super::super::rand::{Rand, random};
-    use super::super::byteorder::{LittleEndian, BigEndian, WriteBytesExt, ReadBytesExt};
     use std::str;
-    use super::{Decoder};
-    #[cfg(feature="unstable")]
+    #[cfg(feature = "unstable")]
     use test;
 
     // The input data for these tests were all generated from the zpipe.c
@@ -555,7 +560,7 @@ mod test {
         loop {
             match d.read_u8() {
                 Ok(b) => out.push(b),
-                Err(..) => break
+                Err(..) => break,
             }
         }
 
@@ -597,7 +602,7 @@ mod test {
     //    roundtrip(include_bytes!("data/test.txt"));
     //}
 
-    #[cfg(feature="unstable")]
+    #[cfg(feature = "unstable")]
     #[bench]
     fn decompress_speed(bh: &mut test::Bencher) {
         let input = include_bytes!("data/test.z.9");

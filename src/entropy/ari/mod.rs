@@ -37,8 +37,7 @@ This is an original implementation.
 use std::fmt::Display;
 use std::io::{self, Read, Write};
 
-use super::super::byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
-use super::super::byteorder_err_to_io;
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 pub use self::table::{ByteDecoder, ByteEncoder};
 
@@ -50,16 +49,15 @@ mod test;
 
 pub type Symbol = u8;
 const SYMBOL_BITS: usize = 8;
-const SYMBOL_TOTAL: usize = 1<<SYMBOL_BITS;
+const SYMBOL_TOTAL: usize = 1 << SYMBOL_BITS;
 
 pub type Border = u32;
 const BORDER_BYTES: usize = 4;
 const BORDER_BITS: usize = BORDER_BYTES * 8;
-const BORDER_EXCESS: usize = BORDER_BITS-SYMBOL_BITS;
-const BORDER_SYMBOL_MASK: u32 = ((SYMBOL_TOTAL-1) << BORDER_EXCESS) as u32;
+const BORDER_EXCESS: usize = BORDER_BITS - SYMBOL_BITS;
+const BORDER_SYMBOL_MASK: u32 = ((SYMBOL_TOTAL - 1) << BORDER_EXCESS) as u32;
 
-pub const RANGE_DEFAULT_THRESHOLD: Border = 1<<14;
-
+pub const RANGE_DEFAULT_THRESHOLD: Border = 1 << 14;
 
 /// Range Encoder basic primitive
 /// Gets probability ranges on the input, produces whole bytes of code on the output,
@@ -114,34 +112,57 @@ impl RangeEncoder {
 
     /// Process a given interval [from/total,to/total) into the current range
     /// write into the output slice, and return the number of symbols produced
-    pub fn process(&mut self, total: Border, from: Border, to: Border, output: &mut [Symbol]) -> usize {
-        debug_assert!(from<to && to<=total);
+    pub fn process(
+        &mut self,
+        total: Border,
+        from: Border,
+        to: Border,
+        output: &mut [Symbol],
+    ) -> usize {
+        debug_assert!(from < to && to <= total);
         let old_range = self.hai - self.low;
         let range = old_range / total;
-        debug_assert!(range>0, "RangeCoder range is too narrow [{}-{}) for the total {}",
-            self.low, self.hai, total);
-        debug!("\t\tProcessing [{}-{})/{} with range {}", from, to, total, range);
-        let mut lo = self.low + range*from;
-        let mut hi = self.low + range*to;
-        self.bits_lost_on_division += RangeEncoder::count_bits(range*total, old_range);
+        debug_assert!(
+            range > 0,
+            "RangeCoder range is too narrow [{}-{}) for the total {}",
+            self.low,
+            self.hai,
+            total
+        );
+        debug!(
+            "\t\tProcessing [{}-{})/{} with range {}",
+            from, to, total, range
+        );
+        let mut lo = self.low + range * from;
+        let mut hi = self.low + range * to;
+        self.bits_lost_on_division += RangeEncoder::count_bits(range * total, old_range);
         let mut num_shift = 0;
         loop {
-            if (lo^hi) & BORDER_SYMBOL_MASK != 0 {
-                if hi-lo > self.threshold {
-                    break
+            if (lo ^ hi) & BORDER_SYMBOL_MASK != 0 {
+                if hi - lo > self.threshold {
+                    break;
                 }
-                let old_range = hi-lo;
+                let old_range = hi - lo;
                 let lim = hi & BORDER_SYMBOL_MASK;
-                if hi-lim >= lim-lo {lo=lim}
-                else {hi=lim-1};
+                if hi - lim >= lim - lo {
+                    lo = lim
+                } else {
+                    hi = lim - 1
+                };
                 debug_assert!(lo < hi);
-                self.bits_lost_on_threshold_cut += RangeEncoder::count_bits(hi-lo, old_range);
+                self.bits_lost_on_threshold_cut += RangeEncoder::count_bits(hi - lo, old_range);
             }
 
-            debug!("\t\tShifting on [{}-{}) to symbol {}", lo, hi, lo>>BORDER_EXCESS);
-            output[num_shift] = (lo>>BORDER_EXCESS) as Symbol;
+            debug!(
+                "\t\tShifting on [{}-{}) to symbol {}",
+                lo,
+                hi,
+                lo >> BORDER_EXCESS
+            );
+            output[num_shift] = (lo >> BORDER_EXCESS) as Symbol;
             num_shift += 1;
-            lo<<=SYMBOL_BITS; hi<<=SYMBOL_BITS;
+            lo <<= SYMBOL_BITS;
+            hi <<= SYMBOL_BITS;
             debug_assert!(lo < hi);
         }
         self.low = lo;
@@ -151,8 +172,10 @@ impl RangeEncoder {
 
     /// Query the value encoded by 'code' in range [0,total)
     pub fn query(&self, total: Border, code: Border) -> Border {
-        debug!("\t\tQuerying code {} of total {} under range [{}-{})",
-            code, total, self.low, self.hai);
+        debug!(
+            "\t\tQuerying code {} of total {} under range [{}-{})",
+            code, total, self.low, self.hai
+        );
         debug_assert!(self.low <= code && code < self.hai);
         let range = (self.hai - self.low) / total;
         (code - self.low) / range
@@ -168,14 +191,13 @@ impl RangeEncoder {
     }
 }
 
-
 /// An abstract model to produce probability ranges
 /// Can be a table, a mix of tables, or just a smart function.
 pub trait Model<V: Copy + Display> {
     /// Get the probability range of a value
-    fn get_range(&self, value: V) -> (Border,Border);
+    fn get_range(&self, value: V) -> (Border, Border);
     /// Find the value by a given probability offset, return with the range
-    fn find_value(&self, offset: Border) -> (V,Border,Border);
+    fn find_value(&self, offset: Border) -> (V, Border, Border);
     /// Get the sum of all probabilities
     fn get_denominator(&self) -> Border;
 
@@ -184,7 +206,10 @@ pub trait Model<V: Copy + Display> {
     fn encode(&self, value: V, re: &mut RangeEncoder, out: &mut [Symbol]) -> usize {
         let (lo, hi) = self.get_range(value);
         let total = self.get_denominator();
-        debug!("\tEncoding value {} of range [{}-{}) with total {}", value, lo, hi, total);
+        debug!(
+            "\tEncoding value {} of range [{}-{}) with total {}",
+            value, lo, hi, total
+        );
         re.process(total, lo, hi, out)
     }
 
@@ -194,15 +219,25 @@ pub trait Model<V: Copy + Display> {
         let total = self.get_denominator();
         let offset = re.query(total, code);
         let (value, lo, hi) = self.find_value(offset);
-        debug!("\tDecoding value {} of offset {} with total {}", value, offset, total);
+        debug!(
+            "\tDecoding value {} of offset {} with total {}",
+            value, offset, total
+        );
         let mut out = [0 as Symbol; BORDER_BYTES];
         let shift = re.process(total, lo, hi, &mut out[..]);
-        debug_assert_eq!(if shift==0 {0} else {code>>(BORDER_BITS - shift*8)},
-            out[..shift].iter().fold(0 as Border, |u,&b| (u<<8)+(b as Border)));
+        debug_assert_eq!(
+            if shift == 0 {
+                0
+            } else {
+                code >> (BORDER_BITS - shift * 8)
+            },
+            out[..shift]
+                .iter()
+                .fold(0 as Border, |u, &b| (u << 8) + (b as Border))
+        );
         (value, shift)
     }
 }
-
 
 /// An arithmetic encoder helper
 pub struct Encoder<W> {
@@ -220,18 +255,21 @@ impl<W: Write> Encoder<W> {
     }
 
     /// Encode an abstract value under the given Model
-    pub fn encode<V: Copy + Display, M: Model<V>>(&mut self, value: V, model: &M) -> io::Result<()> {
+    pub fn encode<V: Copy + Display, M: Model<V>>(
+        &mut self,
+        value: V,
+        model: &M,
+    ) -> io::Result<()> {
         let mut buf = [0 as Symbol; BORDER_BYTES];
         let num = model.encode(value, &mut self.range, &mut buf[..]);
-        self.stream.write(&buf[..num]).map(|_| ()) 
+        self.stream.write(&buf[..num]).map(|_| ())
     }
 
     /// Finish encoding by writing the code tail word
     pub fn finish(mut self) -> (W, io::Result<()>) {
         debug_assert!(BORDER_BITS == 32);
         let code = self.range.get_code_tail();
-        let result = self.stream.write_u32::<BigEndian>(code)
-                                .map_err(byteorder_err_to_io);
+        let result = self.stream.write_u32::<BigEndian>(code);
         let result = result.and(self.stream.flush());
         (self.stream, result)
     }
@@ -244,8 +282,8 @@ impl<W: Write> Encoder<W> {
     /// Return the number of bytes lost due to threshold cuts and integer operations
     #[cfg(tune)]
     pub fn get_bytes_lost(&self) -> (f32, f32) {
-        let (a,b) = self.range.get_bits_lost();
-        (a/8.0, b/8.0)
+        let (a, b) = self.range.get_bits_lost();
+        (a / 8.0, b / 8.0)
     }
 }
 
@@ -270,8 +308,8 @@ impl<R: Read> Decoder<R> {
 
     fn feed(&mut self) -> io::Result<()> {
         while self.bytes_pending != 0 {
-            let b = try!(self.stream.read_u8());
-            self.code = (self.code<<8) + (b as Border);
+            let b = r#try!(self.stream.read_u8());
+            self.code = (self.code << 8) + (b as Border);
             self.bytes_pending -= 1;
         }
         Ok(())
@@ -286,7 +324,7 @@ impl<R: Read> Decoder<R> {
     }
 
     /// Finish decoding
-    pub fn finish(mut self) -> (R, io::Result<()>)  {
+    pub fn finish(mut self) -> (R, io::Result<()>) {
         let err = self.feed();
         (self.stream, err)
     }

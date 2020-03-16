@@ -1,5 +1,4 @@
 [package]
-
 name = "compress"
 description = "Various compression algorithms written in rust"
 repository = "https://github.com/alexcrichton/rust-compress"
@@ -24,7 +23,7 @@ name = "compress"
 doc = false
 
 [dependencies]
-log = "0.3"
-num = "0.1"
+log = "0.4"
+num = "0.2"
 rand = "0.3"
-byteorder = "0.4"
+byteorder = "1.3"

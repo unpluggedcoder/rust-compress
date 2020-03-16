@@ -27,15 +27,15 @@ can be found at https://github.com/bkaradzic/go-lz4.
 */
 
 use std::cmp;
-use std::ptr::copy_nonoverlapping;
 use std::io::{self, Read, Write};
 use std::iter::repeat;
-use std::vec::Vec;
 use std::num::Wrapping;
 use std::ops::Shr;
+use std::ptr::copy_nonoverlapping;
+use std::vec::Vec;
 
-use super::byteorder::{LittleEndian, WriteBytesExt, ReadBytesExt};
-use super::{ReadExact, byteorder_err_to_io};
+use super::byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use super::ReadExact;
 
 const MAGIC: u32 = 0x184d2204;
 
@@ -75,16 +75,16 @@ impl<'a> BlockDecoder<'a> {
                 if len > 0 {
                     let end = self.end;
                     self.grow_output(end + len);
-                    unsafe { copy_nonoverlapping(
-                        &self.input[self.cur],
-                        &mut self.output[end],
-                        len
-                    )};
+                    unsafe {
+                        copy_nonoverlapping(&self.input[self.cur], &mut self.output[end], len)
+                    };
                     self.end += len;
                     self.cur += len;
                 }
             }
-            if self.cur == self.input.len() { break }
+            if self.cur == self.input.len() {
+                break;
+            }
 
             // Read off the next i16 offset
             {
@@ -115,7 +115,9 @@ impl<'a> BlockDecoder<'a> {
             loop {
                 let tmp = self.bump();
                 ret += tmp as usize;
-                if tmp != 0xff { break }
+                if tmp != 0xff {
+                    break;
+                }
             }
         }
         ret
@@ -153,9 +155,9 @@ impl<'a> BlockDecoder<'a> {
             while self.output.len() < target {
                 self.output.push(0);
             }
-        }else {
+        } else {
             unsafe {
-               self.output.set_len(target);
+                self.output.set_len(target);
             }
         }
     }
@@ -167,7 +169,7 @@ struct BlockEncoder<'a> {
     hash_table: Vec<u32>,
     pos: u32,
     anchor: u32,
-    dest_pos: u32
+    dest_pos: u32,
 }
 
 /// Returns maximum possible size of compressed output
@@ -192,7 +194,11 @@ impl<'a> BlockEncoder<'a> {
     fn write_literals(&mut self, len: u32, ml_len: u32, pos: u32) {
         let mut ln = len;
 
-        let code = if ln > RUN_MASK - 1 { RUN_MASK as u8 } else { ln as u8 };
+        let code = if ln > RUN_MASK - 1 {
+            RUN_MASK as u8
+        } else {
+            ln as u8
+        };
 
         if ml_len > ML_MASK - 1 {
             self.output[self.dest_pos as usize] = (code << ML_BITS as usize) + ML_MASK as u8;
@@ -234,7 +240,9 @@ impl<'a> BlockEncoder<'a> {
                     let additional = out_size_usize - self.output.capacity();
                     self.output.reserve(additional);
                 }
-                unsafe {self.output.set_len(out_size_usize); }
+                unsafe {
+                    self.output.set_len(out_size_usize);
+                }
 
                 let mut step = 1u32;
                 let mut limit = INCOMPRESSIBLE;
@@ -248,7 +256,9 @@ impl<'a> BlockEncoder<'a> {
                     }
 
                     let seq = self.seq_at(self.pos);
-                    let hash = (Wrapping(seq) * Wrapping(2654435761)).shr(HASH_SHIFT as usize).0;
+                    let hash = (Wrapping(seq) * Wrapping(2654435761))
+                        .shr(HASH_SHIFT as usize)
+                        .0;
                     let mut r = (Wrapping(self.hash_table[hash as usize]) + Wrapping(UNINITHASH)).0;
                     self.hash_table[hash as usize] = (Wrapping(self.pos) - Wrapping(UNINITHASH)).0;
 
@@ -278,7 +288,9 @@ impl<'a> BlockEncoder<'a> {
                     r += MIN_MATCH;
                     self.anchor = self.pos;
 
-                    while (self.pos < input_len - 5) && self.input[self.pos as usize] == self.input[r as usize] {
+                    while (self.pos < input_len - 5)
+                        && self.input[self.pos as usize] == self.input[r as usize]
+                    {
                         self.pos += 1;
                         r += 1
                     }
@@ -362,18 +374,18 @@ impl<R: Read + Sized> Decoder<R> {
 
     fn read_header(&mut self) -> io::Result<()> {
         // Make sure the magic number is what's expected.
-        if try!(self.r.read_u32::<LittleEndian>()) != MAGIC {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, ""))
+        if r#try!(self.r.read_u32::<LittleEndian>()) != MAGIC {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, ""));
         }
 
         let mut bits = [0; 3];
-        try!(self.r.read(&mut bits[..2]));
+        r#try!(self.r.read(&mut bits[..2]));
         let flg = bits[0];
         let bd = bits[1];
 
         // bits 7/6, the version number. Right now this must be 1
         if (flg >> 6) != 0b01 {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, ""))
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, ""));
         }
         // bit 5 is the "block independence", don't care about this yet
         // bit 4 is whether blocks have checksums or not
@@ -386,12 +398,16 @@ impl<R: Read + Sized> Decoder<R> {
         // bit 0 is whether there is a preset dictionary
         let preset_dictionary = (flg & 0x01) != 0;
 
-        static MAX_SIZES: [usize; 8] =
-            [0, 0, 0, 0, // all N/A
-             64 << 10,   // 64KB
-             256 << 10,  // 256 KB
-             1 << 20,    // 1MB
-             4 << 20];   // 4MB
+        static MAX_SIZES: [usize; 8] = [
+            0,
+            0,
+            0,
+            0,         // all N/A
+            64 << 10,  // 64KB
+            256 << 10, // 256 KB
+            1 << 20,   // 1MB
+            4 << 20,
+        ]; // 4MB
 
         // bit 7 is reserved
         // bits 6-4 are the maximum block size
@@ -400,7 +416,7 @@ impl<R: Read + Sized> Decoder<R> {
 
         // read off other portions of the stream
         let size = if stream_size {
-            Some(try!(self.r.read_u64::<LittleEndian>()))
+            Some(r#try!(self.r.read_u64::<LittleEndian>()))
         } else {
             None
         };
@@ -414,13 +430,13 @@ impl<R: Read + Sized> Decoder<R> {
         self.max_block_size = max_block_size;
 
         // XXX: implement checksums
-        let cksum = try!(self.r.read_u8());
+        let cksum = r#try!(self.r.read_u8());
         debug!("ignoring header checksum: {}", cksum);
         return Ok(());
     }
 
     fn decode_block(&mut self) -> io::Result<bool> {
-        match try!(self.r.read_u32::<LittleEndian>()) {
+        match r#try!(self.r.read_u32::<LittleEndian>()) {
             // final block, we're done here
             0 => return Ok(false),
 
@@ -429,7 +445,7 @@ impl<R: Read + Sized> Decoder<R> {
                 let amt = (n & 0x7fffffff) as usize;
                 self.output.truncate(0);
                 self.output.reserve(amt);
-                try!(self.r.push_exactly(amt as u64, &mut self.output));
+                r#try!(self.r.push_exactly(amt as u64, &mut self.output));
                 self.start = 0;
                 self.end = amt;
             }
@@ -439,7 +455,7 @@ impl<R: Read + Sized> Decoder<R> {
                 let n = n as usize;
                 self.temp.truncate(0);
                 self.temp.reserve(n);
-                try!(self.r.push_exactly(n as u64, &mut self.temp));
+                r#try!(self.r.push_exactly(n as u64, &mut self.temp));
 
                 let target = cmp::min(self.max_block_size, 4 * n / 3);
                 self.output.truncate(0);
@@ -457,21 +473,25 @@ impl<R: Read + Sized> Decoder<R> {
         }
 
         if self.blk_checksum {
-            let cksum = try!(self.r.read_u32::<LittleEndian>());
+            let cksum = r#try!(self.r.read_u32::<LittleEndian>());
             debug!("ignoring block checksum {}", cksum);
         }
         return Ok(true);
     }
 
     /// Tests whether the end of this LZ4 stream has been reached
-    pub fn eof(&mut self) -> bool { self.eof }
+    pub fn eof(&mut self) -> bool {
+        self.eof
+    }
 }
 
 impl<R: Read> Read for Decoder<R> {
     fn read(&mut self, dst: &mut [u8]) -> io::Result<usize> {
-        if self.eof { return Ok(0) }
+        if self.eof {
+            return Ok(0);
+        }
         if !self.header {
-            try!(self.read_header());
+            r#try!(self.read_header());
             self.header = true;
         }
         let mut amt = dst.len();
@@ -479,18 +499,14 @@ impl<R: Read> Read for Decoder<R> {
 
         while amt > 0 {
             if self.start == self.end {
-                let keep_going = try!(self.decode_block());
+                let keep_going = r#try!(self.decode_block());
                 if !keep_going {
                     self.eof = true;
                     break;
                 }
             }
             let n = cmp::min(amt, self.end - self.start);
-            unsafe { copy_nonoverlapping(
-                &self.output[self.start],
-                &mut dst[len - amt],
-                n
-            )};
+            unsafe { copy_nonoverlapping(&self.output[self.start], &mut dst[len - amt], n) };
             self.start += n;
             amt -= n;
         }
@@ -530,11 +546,13 @@ impl<W: Write> Encoder<W> {
     fn encode_block(&mut self) -> io::Result<()> {
         self.tmp.truncate(0);
         if self.compress() {
-            try!(self.w.write_u32::<LittleEndian>(self.tmp.len() as u32));
-            try!(self.w.write(&self.tmp));
+            r#try!(self.w.write_u32::<LittleEndian>(self.tmp.len() as u32));
+            r#try!(self.w.write(&self.tmp));
         } else {
-            try!(self.w.write_u32::<LittleEndian>((self.buf.len() as u32) | 0x80000000));
-            try!(self.w.write(&self.buf));
+            r#try!(self
+                .w
+                .write_u32::<LittleEndian>((self.buf.len() as u32) | 0x80000000));
+            r#try!(self.w.write(&self.buf));
         }
         self.buf.truncate(0);
         Ok(())
@@ -551,8 +569,7 @@ impl<W: Write> Encoder<W> {
         let mut result = self.flush();
 
         for _ in 0..2 {
-            let tmp = self.w.write_u32::<LittleEndian>(0)
-                            .map_err(byteorder_err_to_io);
+            let tmp = self.w.write_u32::<LittleEndian>(0);
 
             result = result.and_then(|_| tmp);
         }
@@ -564,14 +581,14 @@ impl<W: Write> Encoder<W> {
 impl<W: Write> Write for Encoder<W> {
     fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
         if !self.wrote_header {
-            try!(self.w.write_u32::<LittleEndian>(MAGIC));
+            r#try!(self.w.write_u32::<LittleEndian>(MAGIC));
             // version 01, turn on block independence, but turn off
             // everything else (we have no checksums right now).
-            try!(self.w.write_u8(0b01_100000));
+            r#try!(self.w.write_u8(0b01_100000));
             // Maximum block size is 256KB
-            try!(self.w.write_u8(0b0_101_0000));
+            r#try!(self.w.write_u8(0b0_101_0000));
             // XXX: this checksum is just plain wrong.
-            try!(self.w.write_u8(0));
+            r#try!(self.w.write_u8(0));
             self.wrote_header = true;
         }
 
@@ -580,7 +597,7 @@ impl<W: Write> Write for Encoder<W> {
             self.buf.extend(buf[..amt].iter().map(|b| *b));
 
             if self.buf.len() == self.limit {
-                try!(self.encode_block());
+                r#try!(self.encode_block());
             }
             buf = &buf[amt..];
         }
@@ -590,12 +607,11 @@ impl<W: Write> Write for Encoder<W> {
 
     fn flush(&mut self) -> io::Result<()> {
         if self.buf.len() > 0 {
-            try!(self.encode_block());
+            r#try!(self.encode_block());
         }
         self.w.flush()
     }
 }
-
 
 /// Decodes pure LZ4 block into output. Returns count of bytes
 /// processed.
@@ -605,11 +621,10 @@ pub fn decode_block(input: &[u8], output: &mut Vec<u8>) -> usize {
         output: output,
         cur: 0,
         start: 0,
-        end: 0
+        end: 0,
     };
     b.decode()
 }
-
 
 /// Encodes input into pure LZ4 block. Return count of bytes
 /// processed.
@@ -620,7 +635,7 @@ pub fn encode_block(input: &[u8], output: &mut Vec<u8>) -> usize {
         hash_table: repeat(0).take(HASH_TABLE_SIZE as usize).collect(),
         pos: 0,
         anchor: 0,
-        dest_pos: 0
+        dest_pos: 0,
     };
 
     encoder.encode() as usize
@@ -628,10 +643,10 @@ pub fn encode_block(input: &[u8], output: &mut Vec<u8>) -> usize {
 
 #[cfg(test)]
 mod test {
-    use std::io::{BufReader, BufWriter, Read, Write};
     use super::super::rand;
     use super::{Decoder, Encoder};
-    #[cfg(feature="unstable")]
+    use std::io::{BufReader, BufWriter, Read, Write};
+    #[cfg(feature = "unstable")]
     use test;
 
     use super::super::byteorder::ReadBytesExt;
@@ -680,7 +695,7 @@ mod test {
         loop {
             match d.read_u8() {
                 Ok(b) => out.push(b),
-                Err(..) => break
+                Err(..) => break,
             }
         }
         assert!(d.eof());
@@ -699,7 +714,7 @@ mod test {
                 Ok(n) => {
                     out.extend(buf[..n].iter().map(|b| *b));
                 }
-                Err(..) => break
+                Err(..) => break,
             }
         }
         assert!(&out[..] == &include_bytes!("data/test.txt")[..]);
@@ -725,7 +740,7 @@ mod test {
         roundtrip(include_bytes!("data/test.txt"));
     }
 
-    #[cfg(feature="unstable")]
+    #[cfg(feature = "unstable")]
     #[bench]
     fn decompress_speed(bh: &mut test::Bencher) {
         let input = include_bytes!("data/test.lz4.9");

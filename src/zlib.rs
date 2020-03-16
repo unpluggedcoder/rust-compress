@@ -20,11 +20,11 @@
 //! * http://tools.ietf.org/html/rfc1950 - RFC that this implementation is based
 //!   on
 
-use std::io::{self, Read};
 use super::byteorder::{BigEndian, ReadBytesExt};
+use std::io::{self, Read};
 
-use Adler32;
-use flate;
+use crate::flate;
+use crate::Adler32;
 
 /// Structure used to decode a ZLIB-encoded stream. The wrapped stream can be
 /// re-acquired through the unwrap() method.
@@ -52,40 +52,42 @@ impl<R: Read> Decoder<R> {
     }
 
     fn validate_header(&mut self) -> io::Result<()> {
-        let cmf = try!(self.inner.r.read_u8());
-        let flg = try!(self.inner.r.read_u8());
+        let cmf = r#try!(self.inner.r.read_u8());
+        let flg = r#try!(self.inner.r.read_u8());
         if cmf & 0xf != 0x8 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "unsupported zlib stream format"
-            ))
+                "unsupported zlib stream format",
+            ));
         }
 
         if cmf & 0xf0 != 0x70 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "unsupported zlib window size"
-            ))
+                "unsupported zlib window size",
+            ));
         }
 
         if flg & 0x20 != 0 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "unsupported initial dictionary in the output stream"
-            ))
+                "unsupported initial dictionary in the output stream",
+            ));
         }
 
         if ((cmf as u16) * 256 + (flg as u16)) % 31 != 0 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "invalid zlib header checksum"
-            ))
+                "invalid zlib header checksum",
+            ));
         }
         Ok(())
     }
 
     /// Tests if this stream has reached the EOF point yet.
-    pub fn eof(&self) -> bool { self.inner.eof() }
+    pub fn eof(&self) -> bool {
+        self.inner.eof()
+    }
 
     #[allow(dead_code)]
     fn reset(&mut self) {
@@ -98,21 +100,20 @@ impl<R: Read> Decoder<R> {
 impl<R: Read> Read for Decoder<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if !self.read_header {
-            try!(self.validate_header());
+            r#try!(self.validate_header());
             self.read_header = true;
         } else if self.inner.eof() {
             return Ok(0);
         }
         match self.inner.read(buf) {
             Ok(0) => {
-                let cksum = try!(self.inner.r.read_u32::<BigEndian>());
+                let cksum = r#try!(self.inner.r.read_u32::<BigEndian>());
                 if cksum != self.hash.result() {
                     Err(io::Error::new(
                         io::ErrorKind::InvalidInput,
-                        "invalid checksum on zlib stream"
+                        "invalid checksum on zlib stream",
                     ))
-                }
-                else {
+                } else {
                     Ok(0)
                 }
             }
@@ -120,7 +121,7 @@ impl<R: Read> Read for Decoder<R> {
                 self.hash.feed(&buf[..n]);
                 Ok(n)
             }
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 }
@@ -128,12 +129,12 @@ impl<R: Read> Read for Decoder<R> {
 #[cfg(test)]
 #[allow(warnings)]
 mod test {
+    use super::Decoder;
+    use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
+    use rand::random;
     use std::io::{BufReader, BufWriter, Read, Write};
-    use super::super::rand::{random, Rand};
-    use super::super::byteorder::{LittleEndian, BigEndian, WriteBytesExt, ReadBytesExt};
     use std::str;
-    use super::{Decoder};
-    #[cfg(feature="unstable")]
+    #[cfg(feature = "unstable")]
     use test;
 
     fn test_decode(input: &[u8], output: &[u8]) {
@@ -177,7 +178,7 @@ mod test {
         loop {
             match d.read_u8() {
                 Ok(b) => out.push(b),
-                Err(..) => break
+                Err(..) => break,
             }
         }
         assert!(d.eof());
@@ -218,7 +219,7 @@ mod test {
     //    roundtrip(include_bytes!("data/test.txt"));
     //}
 
-    #[cfg(feature="unstable")]
+    #[cfg(feature = "unstable")]
     #[bench]
     fn decompress_speed(bh: &mut test::Bencher) {
         let input = include_bytes!("data/test.z.9");

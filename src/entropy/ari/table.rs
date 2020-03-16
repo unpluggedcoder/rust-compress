@@ -211,7 +211,7 @@ impl<W: Write> Write for ByteEncoder<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         for byte in buf.iter() {
             let value = *byte as usize;
-            try!(self.encoder.encode(value, &self.freq));
+            r#try!(self.encoder.encode(value, &self.freq));
             self.freq.update(value, 10, 1);
         }
 
@@ -259,7 +259,7 @@ impl<R: Read> Read for ByteDecoder<R> {
         }
         let mut amount = 0;
         for out_byte in dst.iter_mut() {
-            let value = try!(self.decoder.decode(&self.freq));
+            let value = r#try!(self.decoder.decode(&self.freq));
             if value == super::SYMBOL_TOTAL {
                 self.is_eof = true;
                 break

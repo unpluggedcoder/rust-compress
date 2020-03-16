@@ -30,15 +30,14 @@ let result = d.read_to_end(&mut decoded).unwrap();
 
 */
 
-use std::mem;
 use std::io::{self, Read, Write};
+use std::mem;
 
-use super::super::byteorder::{self, WriteBytesExt, ReadBytesExt};
+use byteorder::{ReadBytesExt, WriteBytesExt};
 
 pub type Symbol = u8;
 pub type Rank = u8;
 pub const TOTAL_SYMBOLS: usize = 0x100;
-
 
 /// MoveToFront encoder/decoder
 pub struct MTF {
@@ -49,12 +48,14 @@ pub struct MTF {
 impl MTF {
     /// create a new zeroed MTF
     pub fn new() -> MTF {
-        MTF { symbols: [0; TOTAL_SYMBOLS] }
+        MTF {
+            symbols: [0; TOTAL_SYMBOLS],
+        }
     }
 
     /// set the order of symbols to be alphabetical
     pub fn reset_alphabetical(&mut self) {
-        for (i,sym) in self.symbols.iter_mut().enumerate() {
+        for (i, sym) in self.symbols.iter_mut().enumerate() {
             *sym = i as Symbol;
         }
     }
@@ -63,7 +64,7 @@ impl MTF {
     pub fn encode(&mut self, sym: Symbol) -> Rank {
         let mut next = self.symbols[0];
         if next == sym {
-            return 0
+            return 0;
         }
         let mut rank: Rank = 1;
         loop {
@@ -82,14 +83,13 @@ impl MTF {
     pub fn decode(&mut self, rank: Rank) -> Symbol {
         let sym = self.symbols[rank as usize];
         debug!("\tDecoding rank {} with symbol {}", rank, sym);
-        for i in (0 .. rank as usize).rev() {
-            self.symbols[i+1] = self.symbols[i];
+        for i in (0..rank as usize).rev() {
+            self.symbols[i + 1] = self.symbols[i];
         }
         self.symbols[0] = sym;
         sym
     }
 }
-
 
 /// A simple MTF stream encoder
 pub struct Encoder<W> {
@@ -102,10 +102,7 @@ impl<W> Encoder<W> {
     pub fn new(w: W) -> Encoder<W> {
         let mut mtf = MTF::new();
         mtf.reset_alphabetical();
-        Encoder {
-            w: w,
-            mtf: mtf,
-        }
+        Encoder { w: w, mtf: mtf }
     }
 
     /// finish encoding and return the wrapped writer
@@ -118,7 +115,7 @@ impl<W: Write> Write for Encoder<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         for sym in buf.iter() {
             let rank = self.mtf.encode(*sym);
-            try!(self.w.write_u8(rank));
+            r#try!(self.w.write_u8(rank));
         }
         Ok(buf.len())
     }
@@ -127,7 +124,6 @@ impl<W: Write> Write for Encoder<W> {
         self.w.flush()
     }
 }
-
 
 /// A simple MTF stream decoder
 pub struct Decoder<R> {
@@ -140,10 +136,7 @@ impl<R> Decoder<R> {
     pub fn new(r: R) -> Decoder<R> {
         let mut mtf = MTF::new();
         mtf.reset_alphabetical();
-        Decoder {
-            r: r,
-            mtf: mtf,
-        }
+        Decoder { r: r, mtf: mtf }
     }
 
     /// finish decoder and return the wrapped reader
@@ -158,23 +151,22 @@ impl<R: Read> Read for Decoder<R> {
         for sym in dst.iter_mut() {
             let rank = match self.r.read_u8() {
                 Ok(r) => r,
-                Err(byteorder::Error::UnexpectedEOF) => break,
-                Err(byteorder::Error::Io(e)) => return Err(e)
+                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
+                Err(e) => return Err(e),
             };
             bytes_read += 1;
             *sym = self.mtf.decode(rank);
         }
-        Ok((bytes_read))
+        Ok(bytes_read)
     }
 }
 
-
 #[cfg(test)]
 mod test {
+    use super::{Decoder, Encoder};
     use std::io::{self, Read, Write};
-    #[cfg(feature="unstable")]
+    #[cfg(feature = "unstable")]
     use test::Bencher;
-    use super::{Encoder, Decoder};
 
     fn roundtrip(bytes: &[u8]) {
         info!("Roundtrip MTF of size {}", bytes.len());
@@ -196,7 +188,7 @@ mod test {
         roundtrip(include_bytes!("../data/test.txt"));
     }
 
-    #[cfg(feature="unstable")]
+    #[cfg(feature = "unstable")]
     #[bench]
     fn encode_speed(bh: &mut Bencher) {
         let vec = Vec::new();
@@ -209,7 +201,7 @@ mod test {
         bh.bytes = input.len() as u64;
     }
 
-    #[cfg(feature="unstable")]
+    #[cfg(feature = "unstable")]
     #[bench]
     fn decode_speed(bh: &mut Bencher) {
         let vec = Vec::new();

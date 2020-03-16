@@ -1,14 +1,14 @@
-/*! 
+/*!
 
-Run time length encoding and decoding based on byte streams, see 
+Run time length encoding and decoding based on byte streams, see
 https://en.wikipedia.org/wiki/Run-length_encoding.
 
-A run is defined as a sequence of identical bytes of length two or greater. 
-A run of byte a and length n is encoded by a two repitions of a, followed 
-by a length specification which describes how much often these bytes are 
+A run is defined as a sequence of identical bytes of length two or greater.
+A run of byte a and length n is encoded by a two repitions of a, followed
+by a length specification which describes how much often these bytes are
 repeated. Such a specification is a string of bytes with dynamic length.
 The most significat bit of each byte in this string indicates if the byte is
-the last byte in the string. The rest of the bits are concatenated using 
+the last byte in the string. The rest of the bits are concatenated using
 the Little Endian convention.
 
 # Example
@@ -32,7 +32,7 @@ assert_eq!(&input[..], &decoder_buf[..]);
 
 !*/
 
-use std::io::{self, Write, Read, Bytes};
+use std::io::{self, Bytes, Read, Write};
 
 /// This structure is used to compress a stream of bytes using a RLE
 /// compression algorithm. This is a wrapper around an internal writer which
@@ -41,7 +41,7 @@ pub struct Encoder<W> {
     w: W,
     reps: u64,
     byte: u8,
-    in_run: bool
+    in_run: bool,
 }
 
 impl<W: Write> Encoder<W> {
@@ -52,7 +52,7 @@ impl<W: Write> Encoder<W> {
             w: w,
             reps: 0,
             byte: 0,
-            in_run: false
+            in_run: false,
         }
     }
 
@@ -69,7 +69,7 @@ impl<W: Write> Encoder<W> {
         if self.byte == byte {
             self.reps += 1;
         } else if self.byte != byte {
-            try!(self.flush());
+            r#try!(self.flush());
             self.reps = 1;
             self.byte = byte;
         }
@@ -80,14 +80,14 @@ impl<W: Write> Encoder<W> {
 
 impl<W: Write> Write for Encoder<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if ! self.in_run && buf.len() > 0 {
+        if !self.in_run && buf.len() > 0 {
             self.byte = buf[0];
             self.reps = 1;
             self.in_run = true;
         }
 
         for byte in &buf[1..] {
-            try!(self.process_byte(*byte));
+            r#try!(self.process_byte(*byte));
         }
 
         Ok(buf.len())
@@ -95,7 +95,7 @@ impl<W: Write> Write for Encoder<W> {
 
     fn flush(&mut self) -> io::Result<()> {
         if self.reps == 1 {
-            try!(self.w.write(&[self.byte]));
+            r#try!(self.w.write(&[self.byte]));
         } else if self.reps > 1 {
             let mut buf = [0; 11];
             let mut reps_encode = self.reps - 2;
@@ -115,7 +115,7 @@ impl<W: Write> Write for Encoder<W> {
                 index += 1;
             }
 
-            try!(self.w.write(&buf[..(index + 1)]));
+            r#try!(self.w.write(&buf[..(index + 1)]));
         }
 
         Ok(())
@@ -125,7 +125,7 @@ impl<W: Write> Write for Encoder<W> {
 struct RunBuilder {
     byte: u8,
     slice: [u8; 9],
-    byte_count: u8
+    byte_count: u8,
 }
 
 impl RunBuilder {
@@ -133,18 +133,22 @@ impl RunBuilder {
         RunBuilder {
             byte: byte,
             slice: [0; 9],
-            byte_count: 0
+            byte_count: 0,
         }
     }
 
     fn to_run(&mut self) -> Run {
-        let reps = 2 + self.slice.iter().enumerate().fold(0u64, |reps, (i, &byte)| {
-            reps | (((byte & 0b0111_1111) as u64) << (i as u32 * 7))
-        });
+        let reps = 2 + self
+            .slice
+            .iter()
+            .enumerate()
+            .fold(0u64, |reps, (i, &byte)| {
+                reps | (((byte & 0b0111_1111) as u64) << (i as u32 * 7))
+            });
 
         Run {
             byte: self.byte,
-            reps: reps
+            reps: reps,
         }
     }
 
@@ -158,16 +162,16 @@ impl RunBuilder {
         }
     }
 }
- 
+
 struct Run {
     byte: u8,
-    reps: u64
+    reps: u64,
 }
 
 enum DecoderState {
     Clean,
     Single(u8),
-    Run(RunBuilder)
+    Run(RunBuilder),
 }
 
 /// This structure is used to decode a run length encoded stream. This wraps
@@ -176,7 +180,7 @@ enum DecoderState {
 pub struct Decoder<R> {
     buf: Bytes<R>,
     state: DecoderState,
-    run: Option<Run>
+    run: Option<Run>,
 }
 
 impl<R: Read> Decoder<R> {
@@ -187,23 +191,26 @@ impl<R: Read> Decoder<R> {
         Decoder {
             buf: r.bytes(),
             state: DecoderState::Clean,
-            run: None
+            run: None,
         }
     }
 
     fn read_byte(&mut self) -> io::Result<Option<u8>> {
         if let None = self.run {
-            try!(self.read_run());
+            r#try!(self.read_run());
         }
 
         if let Some(Run { byte: b, reps: r }) = self.run {
             if r <= 1 {
                 self.run = None;
             } else {
-                self.run = Some(Run { byte: b, reps: r - 1 });
+                self.run = Some(Run {
+                    byte: b,
+                    reps: r - 1,
+                });
             }
 
-            return Ok(Some(b))
+            return Ok(Some(b));
         }
 
         Ok(None)
@@ -213,23 +220,26 @@ impl<R: Read> Decoder<R> {
         let mut reset = false;
 
         while let Some(result) = self.buf.next() {
-            let byte = try!(result);
+            let byte = r#try!(result);
 
             match self.state {
                 DecoderState::Clean => {
                     self.state = DecoderState::Single(byte);
-                },
+                }
                 DecoderState::Single(current) => {
                     if byte == current {
                         self.state = DecoderState::Run(RunBuilder::new(byte));
                     } else {
-                        self.run = Some(Run { byte: current, reps: 1 });
+                        self.run = Some(Run {
+                            byte: current,
+                            reps: 1,
+                        });
                         self.state = DecoderState::Single(byte);
                         break;
                     }
-                },
+                }
                 DecoderState::Run(ref mut run_builder) => {
-                    try!(run_builder.add_byte(byte));
+                    r#try!(run_builder.add_byte(byte));
 
                     if Self::is_final_run_byte(byte) {
                         self.run = Some(run_builder.to_run());
@@ -248,8 +258,11 @@ impl<R: Read> Decoder<R> {
         if let None = self.run {
             self.run = match self.state {
                 DecoderState::Clean => None,
-                DecoderState::Single(byte) => Some(Run { byte: byte, reps: 1 }),
-                DecoderState::Run(ref mut run_builder) => Some(run_builder.to_run())
+                DecoderState::Single(byte) => Some(Run {
+                    byte: byte,
+                    reps: 1,
+                }),
+                DecoderState::Run(ref mut run_builder) => Some(run_builder.to_run()),
             };
 
             self.state = DecoderState::Clean;
@@ -268,9 +281,9 @@ impl<R: Read> Read for Decoder<R> {
         let mut bytes_read = 0;
 
         for slot in buf {
-            match try!(self.read_byte()) {
+            match r#try!(self.read_byte()) {
                 Some(b) => *slot = b,
-                None => break
+                None => break,
             }
 
             bytes_read += 1;
@@ -283,10 +296,10 @@ impl<R: Read> Read for Decoder<R> {
 #[cfg(test)]
 mod test {
     use super::{Decoder, Encoder};
-    use super::super::rand::{OsRng, Rng};
-    use std::io::{Write, Read};
-    use std::iter::{Iterator, repeat};
-    #[cfg(feature="unstable")]
+    use rand::{OsRng, Rng};
+    use std::io::{Read, Write};
+    use std::iter::{repeat, Iterator};
+    #[cfg(feature = "unstable")]
     use test;
 
     fn test_encode(input: &[u8], output: &[u8]) {
@@ -331,7 +344,11 @@ mod test {
         let mut data = repeat(5).take(129).collect::<Vec<_>>();
         test_encode(&data[..], &[5, 5, 255]);
 
-        data = [1, 3, 4, 4].iter().map(|&x| x).chain(repeat(100).take(2 + 52 + 128)).collect::<Vec<_>>();
+        data = [1, 3, 4, 4]
+            .iter()
+            .map(|&x| x)
+            .chain(repeat(100).take(2 + 52 + 128))
+            .collect::<Vec<_>>();
         test_encode(&data[..], &[1, 3, 4, 4, 0 + 128, 100, 100, 52, 1 + 128]);
     }
 
@@ -346,7 +363,11 @@ mod test {
 
     #[test]
     fn long_run_decoding() {
-        let data = [1, 3, 4, 4].iter().map(|&x| x).chain(repeat(100).take(2 + 52 + 128)).collect::<Vec<_>>();
+        let data = [1, 3, 4, 4]
+            .iter()
+            .map(|&x| x)
+            .chain(repeat(100).take(2 + 52 + 128))
+            .collect::<Vec<_>>();
 
         test_decode(&[1, 3, 4, 4, 0 + 128, 100, 100, 52, 1 + 128], &data[..]);
     }
@@ -365,7 +386,7 @@ mod test {
     // initial speed: 145 MB/s
     // after moving check to write: 145 MB/s
 
-    #[cfg(feature="unstable")]
+    #[cfg(feature = "unstable")]
     #[bench]
     fn compress_speed(bh: &mut test::Bencher) {
         let input = include_bytes!("data/test.txt");
@@ -384,7 +405,7 @@ mod test {
     // after using a byte iterator on a BufReader: 20 MB/s
     // after using a byte iterator on the raw read object: 80 MB/s
 
-    #[cfg(feature="unstable")]
+    #[cfg(feature = "unstable")]
     #[bench]
     fn decompress_speed(bh: &mut test::Bencher) {
         let input = include_bytes!("data/test.txt");
@@ -396,7 +417,7 @@ mod test {
         let mut output_size = 0;
 
         bh.iter(|| {
-            let mut decoder = Decoder::new(& buf[..]);
+            let mut decoder = Decoder::new(&buf[..]);
             output_size = decoder.read(&mut output[..]).unwrap();
         });
 
