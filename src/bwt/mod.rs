@@ -181,7 +181,7 @@ impl<'a, SUF> TransformIterator<'a, SUF> {
     /// create a new BWT iterator from the suffix array
     pub fn new(input: &'a [Symbol], suffixes: &'a [SUF]) -> TransformIterator<'a, SUF> {
         TransformIterator {
-            input: input,
+            input,
             suf_iter: suffixes.iter().enumerate(),
             origin: None,
         }
@@ -263,9 +263,9 @@ impl<'a, SUF> InverseIterator<'a, SUF> {
     pub fn new(input: &'a [Symbol], origin: usize, table: &'a [SUF]) -> InverseIterator<'a, SUF> {
         debug!("inverse origin={:?}, input: {:?}", origin, input);
         InverseIterator {
-            input: input,
-            table: table,
-            origin: origin,
+            input,
+            table,
+            origin,
             current: origin,
         }
     }
@@ -314,7 +314,7 @@ pub fn decode_simple(input: &[Symbol], origin: usize) -> Vec<Symbol> {
 /// Run time: O(n^2), Memory: 0n
 fn decode_minimal(input: &[Symbol], origin: usize, output: &mut [Symbol]) {
     assert_eq!(input.len(), output.len());
-    if input.len() == 0 {
+    if input.is_empty() {
         assert_eq!(origin, 0);
     }
 
@@ -357,7 +357,7 @@ impl<R: Read> Decoder<R> {
     /// 'extra_mem' switch allows allocating extra N words of memory for better performance
     pub fn new(r: R, extra_mem: bool) -> Decoder<R> {
         Decoder {
-            r: r,
+            r,
             start: 0,
             temp: Vec::new(),
             output: Vec::new(),
@@ -389,15 +389,15 @@ impl<R: Read> Decoder<R> {
     fn decode_block(&mut self) -> io::Result<bool> {
         let n = match self.r.read_u32::<LittleEndian>() {
             Ok(n) => n as usize,
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(false), // EOF
             Err(e) => return Err(e),
-            Err(..) => return Ok(false), // EOF
         };
 
         self.temp.truncate(0);
         self.temp.reserve(n);
-        r#try!(self.r.push_exactly(n as u64, &mut self.temp));
+        self.r.push_exactly(n as u64, &mut self.temp)?;
 
-        let origin = r#try!(self.r.read_u32::<LittleEndian>()) as usize;
+        let origin = self.r.read_u32::<LittleEndian>().unwrap() as usize;
         self.output.truncate(0);
         self.output.reserve(n);
 
@@ -413,14 +413,14 @@ impl<R: Read> Decoder<R> {
         }
 
         self.start = 0;
-        return Ok(true);
+        Ok(true)
     }
 }
 
 impl<R: Read> Read for Decoder<R> {
     fn read(&mut self, dst: &mut [u8]) -> io::Result<usize> {
         if !self.header {
-            r#try!(self.read_header());
+            self.read_header()?;
             self.header = true;
         }
         let mut amt = dst.len();
@@ -428,7 +428,7 @@ impl<R: Read> Read for Decoder<R> {
 
         while amt > 0 {
             if self.output.len() == self.start {
-                let keep_going = r#try!(self.decode_block());
+                let keep_going = self.decode_block()?;
                 if !keep_going {
                     break;
                 }
@@ -473,7 +473,7 @@ impl<W: Write> Encoder<W> {
 
     fn encode_block(&mut self) -> io::Result<()> {
         let n = self.buf.len();
-        r#try!(self.w.write_u32::<LittleEndian>(n as u32));
+        self.w.write_u32::<LittleEndian>(n as u32)?;
 
         self.suf.truncate(0);
         self.suf.extend((0..n).map(|_| n));
@@ -482,10 +482,10 @@ impl<W: Write> Encoder<W> {
         {
             let mut iter = encode(&self.buf[..], &mut self.suf[..]);
             for ch in iter.by_ref() {
-                r#try!(w.write_u8(ch));
+                w.write_u8(ch)?;
             }
 
-            r#try!(w.write_u32::<LittleEndian>(iter.get_origin() as u32));
+            w.write_u32::<LittleEndian>(iter.get_origin() as u32)?;
         }
         self.buf.truncate(0);
 
@@ -504,16 +504,16 @@ impl<W: Write> Encoder<W> {
 impl<W: Write> Write for Encoder<W> {
     fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
         if !self.wrote_header {
-            r#try!(self.w.write_u32::<LittleEndian>(self.block_size as u32));
+            self.w.write_u32::<LittleEndian>(self.block_size as u32)?;
             self.wrote_header = true;
         }
 
-        while buf.len() > 0 {
+        while !buf.is_empty() {
             let amt = cmp::min(self.block_size - self.buf.len(), buf.len());
-            self.buf.extend(buf[..amt].iter().map(|b| *b));
+            self.buf.extend(buf[..amt].iter().copied());
 
             if self.buf.len() == self.block_size {
-                r#try!(self.encode_block());
+                self.encode_block()?;
             }
             buf = &buf[amt..];
         }
@@ -521,7 +521,7 @@ impl<W: Write> Write for Encoder<W> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        let ret = if self.buf.len() > 0 {
+        let ret = if !self.buf.is_empty() {
             self.encode_block()
         } else {
             Ok(())
@@ -539,7 +539,7 @@ mod test {
 
     fn roundtrip(bytes: &[u8], extra_mem: bool) {
         let mut e = Encoder::new(BufWriter::new(Vec::new()), 1 << 10);
-        e.write(bytes).unwrap();
+        e.write_all(bytes).unwrap();
         let (e, err) = e.finish();
         err.unwrap();
         let encoded = e.into_inner().unwrap();
